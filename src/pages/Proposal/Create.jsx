@@ -8,12 +8,18 @@ import { useProposals } from "../../hooks/useProposals";
 import { useClients } from "../../hooks/useClients";
 import { useClientUsers } from "../../hooks/useClientUsers";
 
+const BILLING_OPTIONS = ["MONTHLY", "HALF_YEARLY", "YEARLY", "ONE_TIME"];
+
 const FORM = {
     title: "",
     description: "",
     clientId: "",
     clientUserId: "",
     proposalStartDate: "",
+    proposalAmount: "",
+    billing: BILLING_OPTIONS[0],
+    startDate: "",
+    endDate: "",
 };
 
 const MEMBER_FORM = {
@@ -69,12 +75,17 @@ export default function CreateProposal() {
         const created = await addProposal({
             title: form.title,
             description: form.description,
-            tenantId,
             clientId: Number(form.clientId),
             clientUserId: Number(form.clientUserId),
             proposalStartDate: form.proposalStartDate
                 ? new Date(form.proposalStartDate).toISOString()
                 : null,
+            proposalAmount: Number(form.proposalAmount),
+            billing: form.billing,
+            startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
+            endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
+            createdBy: user?.id,
+            createdAt: new Date().toISOString(),
         });
         if (created) navigate(`/proposal/${created.id}`, { state: { proposal: created } });
     };
@@ -180,6 +191,68 @@ export default function CreateProposal() {
                             onChange={handleFieldChange("proposalStartDate")}
                             className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-primary"
                         />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                                Proposal Amount*
+                            </label>
+                            <input
+                                type="number"
+                                required
+                                min="0"
+                                step="0.01"
+                                value={form.proposalAmount}
+                                onChange={handleFieldChange("proposalAmount")}
+                                placeholder="Enter amount"
+                                className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-primary"
+                            />
+                        </div>
+                        <div>
+                            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                                Billing*
+                            </label>
+                            <select
+                                required
+                                value={form.billing}
+                                onChange={handleFieldChange("billing")}
+                                className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-primary"
+                            >
+                                {BILLING_OPTIONS.map((option) => (
+                                    <option key={option} value={option}>
+                                        {option.replaceAll("_", " ")}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                                Start Date*
+                            </label>
+                            <input
+                                type="datetime-local"
+                                required
+                                value={form.startDate}
+                                onChange={handleFieldChange("startDate")}
+                                className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-primary"
+                            />
+                        </div>
+                        <div>
+                            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                                End Date*
+                            </label>
+                            <input
+                                type="datetime-local"
+                                required
+                                value={form.endDate}
+                                onChange={handleFieldChange("endDate")}
+                                className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-primary"
+                            />
+                        </div>
                     </div>
 
                     <div>

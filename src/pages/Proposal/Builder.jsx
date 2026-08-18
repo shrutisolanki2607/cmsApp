@@ -3,11 +3,12 @@ import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { LuArrowLeft, LuPlus, LuMessageSquare, LuFolder } from "react-icons/lu";
 import Button from "../../common/Button/Button";
 import Modal from "../../Modal";
-import { get, put, post } from "../../network";
+import { put } from "../../network";
 import { useAuth } from "../../context/AuthContext";
 import { useProposal } from "../../hooks/useProposals";
-import { useClients } from "../../hooks/useClients";
 import { useClientUsers } from "../../hooks/useClientUsers";
+
+const BILLING_OPTIONS = ["MONTHLY", "HALF_YEARLY", "YEARLY", "ONE_TIME"];
 
 const DISCUSSION_FORM = {
     title: "",
@@ -16,7 +17,20 @@ const DISCUSSION_FORM = {
     requirement: "",
     meetingDate: "",
     clientUserId: "",
+    termChanged: false,
+    proposalAmount: "",
+    billing: "",
+    startDate: "",
+    endDate: "",
 };
+
+function toDateTimeLocal(iso) {
+    if (!iso) return "";
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
 function formatDateTime(iso) {
     if (!iso) return "-";
@@ -33,55 +47,70 @@ export default function ProposalBuilder() {
     const { id } = useParams();
     const location = useLocation();
     const navigate = useNavigate();
-    const { proposal: fetchedProposal, setProposal, loading } = useProposal(id);
+    const { proposal: fetchedProposal, setProposal, loading, savingDiscussion, addDiscussion } = useProposal(id);
     const proposal = fetchedProposal ?? location.state?.proposal ?? null;
 
     const { user } = useAuth();
-    const { clients } = useClients(user?.tenantId);
-    const { clientUsers } = useClientUsers(proposal?.clientId ?? null);
-    const client = clients.find((c) => c.id === proposal?.clientId);
-    const clientUser = clientUsers.find((u) => u.id === proposal?.clientUserId);
+    const { clientUsers } = useClientUsers(proposal?.client?.id ?? null);
+    const client = proposal?.client ?? null;
+    const clientUser = proposal?.clientUser ?? null;
 
-    const discussions = proposal?.proposalDiscussion ?? [];
+    const discussions = proposal?.discussions ?? [];
+    const versions = proposal?.versions ?? [];
+    const latestVersion = versions[0];
 
     const [updating, setUpdating] = useState(false);
     const [discussionModal, setDiscussionModal] = useState(false);
     const [discussionForm, setDiscussionForm] = useState(DISCUSSION_FORM);
-    const [addingDiscussion, setAddingDiscussion] = useState(false);
 
     const openDiscussionModal = () => {
-        setDiscussionForm({ ...DISCUSSION_FORM, clientUserId: proposal?.clientUserId ? String(proposal.clientUserId) : "" });
+        setDiscussionForm({
+            ...DISCUSSION_FORM,
+            clientUserId: proposal?.clientUser?.id ? String(proposal.clientUser.id) : "",
+            proposalAmount: latestVersion?.proposalAmount ?? "",
+            billing: latestVersion?.billing ?? "",
+            startDate: toDateTimeLocal(latestVersion?.startDate),
+            endDate: toDateTimeLocal(latestVersion?.endDate),
+        });
         setDiscussionModal(true);
     };
 
     const handleDiscussionFieldChange = (field) => (e) => {
-        setDiscussionForm((prev) => ({ ...prev, [field]: e.target.value }));
+        const value = field === "termChanged" ? e.target.checked : e.target.value;
+        setDiscussionForm((prev) => ({ ...prev, [field]: value }));
     };
 
     const handleAddDiscussion = async (e) => {
         e.preventDefault();
-        setAddingDiscussion(true);
-        try {
-            await post(`/tenant/proposal/${proposal.id}/discussion`, {
-                proposalId: proposal.id,
-                clientUserId: Number(discussionForm.clientUserId),
-                tenantUserId: user?.id,
-                meetingDate: discussionForm.meetingDate
-                    ? new Date(discussionForm.meetingDate).toISOString()
-                    : null,
-                title: discussionForm.title,
-                description: discussionForm.description,
-                remarks: discussionForm.remarks,
-                requirement: discussionForm.requirement,
-            });
-            const { data } = await get(`/tenant/proposal/${proposal.id}`);
-            setProposal(data?.data ?? data);
-            setDiscussionModal(false);
-        } catch (error) {
-            console.error("Failed to add discussion:", error);
-        } finally {
-            setAddingDiscussion(false);
+
+        const payload = {
+            proposalId: proposal.id,
+            clientUserId: Number(discussionForm.clientUserId),
+            tenantUserId: user?.id,
+            meetingDate: discussionForm.meetingDate
+                ? new Date(discussionForm.meetingDate).toISOString()
+                : null,
+            title: discussionForm.title,
+            description: discussionForm.description,
+            remarks: discussionForm.remarks,
+            requirement: discussionForm.requirement,
+            termChanged: discussionForm.termChanged,
+            createdBy: user?.id,
+        };
+
+        if (proposal.proposalStartDate) {
+            payload.proposalStartDate = new Date(proposal.proposalStartDate).toISOString();
         }
+
+        if (discussionForm.termChanged) {
+            payload.proposalAmount = Number(discussionForm.proposalAmount);
+            payload.billing = discussionForm.billing;
+            payload.startDate = new Date(discussionForm.startDate).toISOString();
+            payload.endDate = new Date(discussionForm.endDate).toISOString();
+        }
+
+        const success = await addDiscussion(payload);
+        if (success) setDiscussionModal(false);
     };
 
     const handleStatusChange = async (status) => {
@@ -333,6 +362,74 @@ export default function ProposalBuilder() {
                             />
                         </div>
 
+                        <div className="col-span-2 flex items-center gap-2">
+                            <input
+                                id="term-changed"
+                                type="checkbox"
+                                checked={discussionForm.termChanged}
+                                onChange={handleDiscussionFieldChange("termChanged")}
+                                className="h-4 w-4 rounded border-border"
+                            />
+                            <label htmlFor="term-changed" className="text-sm font-medium text-text-primary">
+                                Terms changed
+                            </label>
+                        </div>
+
+                        {discussionForm.termChanged && (
+                            <>
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-text-primary">Proposal Amount</label>
+                                    <input
+                                        type="number"
+                                        required
+                                        min="0"
+                                        step="0.01"
+                                        value={discussionForm.proposalAmount}
+                                        onChange={handleDiscussionFieldChange("proposalAmount")}
+                                        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-text-primary">Billing</label>
+                                    <select
+                                        required
+                                        value={discussionForm.billing}
+                                        onChange={handleDiscussionFieldChange("billing")}
+                                        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary"
+                                    >
+                                        <option value="" disabled>
+                                            Select billing
+                                        </option>
+                                        {BILLING_OPTIONS.map((value) => (
+                                            <option key={value} value={value}>
+                                                {value.replaceAll("_", " ")}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-text-primary">Start Date</label>
+                                    <input
+                                        type="datetime-local"
+                                        required
+                                        value={discussionForm.startDate}
+                                        onChange={handleDiscussionFieldChange("startDate")}
+                                        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-text-primary">End Date</label>
+                                    <input
+                                        type="datetime-local"
+                                        required
+                                        value={discussionForm.endDate}
+                                        onChange={handleDiscussionFieldChange("endDate")}
+                                        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary"
+                                    />
+                                </div>
+                            </>
+                        )}
+
                         <div className="col-span-2 mt-2 flex justify-end gap-3">
                             <button
                                 type="button"
@@ -341,7 +438,7 @@ export default function ProposalBuilder() {
                             >
                                 Cancel
                             </button>
-                            <Button type="submit" className="!w-auto px-4" loading={addingDiscussion}>
+                            <Button type="submit" className="!w-auto px-4" loading={savingDiscussion}>
                                 Add
                             </Button>
                         </div>

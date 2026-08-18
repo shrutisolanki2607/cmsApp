@@ -22,12 +22,12 @@ export function AuthProvider({ children }) {
         password: loginPassword,
       });
 
-      const payload = data?.data ?? data;
+      const payload = body?.data ?? body;
 
       if (!payload?.token || !payload?.user) {
         return {
           success: false,
-          error: new Error(payload?.message || data?.message || "Login failed"),
+          error: new Error(payload?.message || body?.message || "Login failed"),
         };
       }
 

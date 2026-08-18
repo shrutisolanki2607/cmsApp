@@ -47,7 +47,7 @@ export function useProposal(proposalId) {
         }
     }, [proposalId, fetchProposal]);
 
-    return { proposal, loading, savingDiscussion, addDiscussion };
+    return { proposal, setProposal, loading, savingDiscussion, addDiscussion };
 }
 
 export function useProposals(tenantId) {
@@ -84,7 +84,7 @@ export function useProposals(tenantId) {
             const { data } = await post(`/tenant/proposal`, payload);
             const newProposal = data?.data ?? data;
             setProposals((prev) => [...prev, newProposal]);
-            return true;
+            return newProposal;
         } catch (error) {
             console.error("Failed to create proposal:", error);
             return null;
